@@ -1,0 +1,79 @@
+CREATE TABLE IF NOT EXISTS users (
+	id BIGSERIAL PRIMARY KEY,
+	email TEXT NOT NULL UNIQUE,
+	password_hash TEXT NOT NULL,
+	display_name TEXT NOT NULL,
+	theme_preference TEXT NOT NULL DEFAULT 'system',
+	language_preference TEXT NOT NULL DEFAULT 'zh',
+	dashboard_view_mode TEXT NOT NULL DEFAULT 'all',
+	show_today_status BOOLEAN NOT NULL DEFAULT FALSE,
+	show_current_streak BOOLEAN NOT NULL DEFAULT FALSE,
+	show_longest_streak BOOLEAN NOT NULL DEFAULT FALSE,
+	show_completion_rate BOOLEAN NOT NULL DEFAULT FALSE,
+	show_total_checkins BOOLEAN NOT NULL DEFAULT FALSE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_current_streak BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_longest_streak BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_completion_rate BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_total_checkins BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS language_preference TEXT NOT NULL DEFAULT 'zh';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS show_today_status BOOLEAN NOT NULL DEFAULT FALSE;
+
+CREATE TABLE IF NOT EXISTS categories (
+	id BIGSERIAL PRIMARY KEY,
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	name TEXT NOT NULL,
+	slug TEXT NOT NULL,
+	color_theme TEXT NOT NULL DEFAULT 'green',
+	sort_order INT NOT NULL DEFAULT 0,
+	is_default BOOLEAN NOT NULL DEFAULT FALSE,
+	is_hidden BOOLEAN NOT NULL DEFAULT FALSE,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	UNIQUE(user_id, slug)
+);
+
+CREATE TABLE IF NOT EXISTS items (
+	id BIGSERIAL PRIMARY KEY,
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	category_id BIGINT NOT NULL REFERENCES categories(id) ON DELETE RESTRICT,
+	name TEXT NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	color_theme TEXT NOT NULL DEFAULT 'green',
+	start_date TEXT NOT NULL,
+	end_date TEXT NOT NULL DEFAULT '',
+	is_unlimited BOOLEAN NOT NULL DEFAULT TRUE,
+	daily_target_count INT NOT NULL DEFAULT 1,
+	time_mode TEXT NOT NULL DEFAULT 'all_day',
+	valid_start_time TEXT NOT NULL DEFAULT '',
+	valid_end_time TEXT NOT NULL DEFAULT '',
+	allow_makeup BOOLEAN NOT NULL DEFAULT FALSE,
+	makeup_limit_days INT NOT NULL DEFAULT 0,
+	allow_extra_checkins BOOLEAN NOT NULL DEFAULT FALSE,
+	show_on_dashboard BOOLEAN NOT NULL DEFAULT TRUE,
+	sort_order INT NOT NULL DEFAULT 0,
+	archived_at TIMESTAMPTZ,
+	deleted_at TIMESTAMPTZ,
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS checkins (
+	id BIGSERIAL PRIMARY KEY,
+	user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+	item_id BIGINT NOT NULL REFERENCES items(id) ON DELETE CASCADE,
+	checkin_date TEXT NOT NULL,
+	checkin_time TEXT NOT NULL,
+	count INT NOT NULL DEFAULT 1,
+	note TEXT NOT NULL DEFAULT '',
+	source TEXT NOT NULL DEFAULT 'normal',
+	created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id, sort_order);
+CREATE INDEX IF NOT EXISTS idx_items_user ON items(user_id, deleted_at, sort_order);
+CREATE INDEX IF NOT EXISTS idx_items_category ON items(category_id);
+CREATE INDEX IF NOT EXISTS idx_checkins_item_date ON checkins(item_id, checkin_date);
