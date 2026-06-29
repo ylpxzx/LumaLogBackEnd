@@ -68,14 +68,11 @@ func (h *Handler) CreateCheckin(c *gin.Context) {
 
 	now := time.Now()
 	today := now.Format(util.DateLayout)
-	todayCount, err := h.Repo.CountForDate(c.Request.Context(), userID, id, today)
+	checkinDate := util.NormalizeDate(util.StringValue(req.CheckinDate, today), today)
+	isMakeup := checkinDate != today
+	dateCount, err := h.Repo.CountForDate(c.Request.Context(), userID, id, checkinDate)
 	if err != nil {
-		jsonError(c, http.StatusInternalServerError, "读取今日进度失败")
-		return
-	}
-	status := service.CheckinStatus(it, todayCount, now)
-	if status != "available" && status != "completed_can_continue" {
-		jsonError(c, http.StatusBadRequest, service.StatusMessage(status))
+		jsonError(c, http.StatusInternalServerError, "读取签到进度失败")
 		return
 	}
 
@@ -88,11 +85,64 @@ func (h *Handler) CreateCheckin(c *gin.Context) {
 	if source != "normal" && source != "makeup" {
 		source = "normal"
 	}
+	if isMakeup {
+		source = "makeup"
+		if it.ArchivedAt != "" {
+			jsonError(c, http.StatusBadRequest, "已归档 habit 不能补签")
+			return
+		}
+		parsedDate := util.ParseDateOr(checkinDate, now)
+		todayDate := util.DateOnly(now)
+		currentMonthStart := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, time.Local)
+		if parsedDate.After(todayDate) {
+			jsonError(c, http.StatusBadRequest, "不能补签未来日期")
+			return
+		}
+		if parsedDate.Before(currentMonthStart) {
+			jsonError(c, http.StatusBadRequest, "只能补签本月日期")
+			return
+		}
+		if util.DateBefore(checkinDate, it.StartDate) {
+			jsonError(c, http.StatusBadRequest, "不能补签开始日期之前")
+			return
+		}
+		if !it.IsUnlimited && it.EndDate != "" && util.DateBefore(it.EndDate, checkinDate) {
+			jsonError(c, http.StatusBadRequest, "不能补签结束日期之后")
+			return
+		}
+		if !it.AllowMakeup {
+			jsonError(c, http.StatusBadRequest, "该 habit 未开启补签")
+			return
+		}
+		if dateCount >= it.DailyTargetCount && !it.AllowExtraCheckins {
+			jsonError(c, http.StatusBadRequest, "该日期已完成签到")
+			return
+		}
+		if it.MakeupMonthlyLimit > 0 {
+			monthEnd := currentMonthStart.AddDate(0, 1, 0)
+			used, err := h.Repo.CountMakeupsCreatedBetween(c.Request.Context(), userID, id, currentMonthStart, monthEnd)
+			if err != nil {
+				jsonError(c, http.StatusInternalServerError, "读取补签次数失败")
+				return
+			}
+			if used >= it.MakeupMonthlyLimit {
+				jsonError(c, http.StatusBadRequest, "本月补签次数已用完")
+				return
+			}
+		}
+	} else {
+		source = "normal"
+		status := service.CheckinStatus(it, dateCount, now)
+		if status != "available" && status != "completed_can_continue" {
+			jsonError(c, http.StatusBadRequest, service.StatusMessage(status))
+			return
+		}
+	}
 
 	_, err = h.DB.Exec(c.Request.Context(), `
 		INSERT INTO checkins (user_id, item_id, checkin_date, checkin_time, count, note, source)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-	`, userID, id, today, now.Format(util.ClockLayout), count, note, source)
+	`, userID, id, checkinDate, now.Format(util.ClockLayout), count, note, source)
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "签到失败")
 		return

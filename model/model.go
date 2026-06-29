@@ -46,6 +46,7 @@ type Item struct {
 	ValidEndTime       string `json:"valid_end_time"`
 	AllowMakeup        bool   `json:"allow_makeup"`
 	MakeupLimitDays    int    `json:"makeup_limit_days"`
+	MakeupMonthlyLimit int    `json:"makeup_monthly_limit"`
 	AllowExtraCheckins bool   `json:"allow_extra_checkins"`
 	ShowOnDashboard    bool   `json:"show_on_dashboard"`
 	SortOrder          int    `json:"sort_order"`
@@ -82,12 +83,28 @@ type ItemStats struct {
 	CompletionRate float64 `json:"completion_rate"`
 }
 
+type Badge struct {
+	ID          string `json:"id"`
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Level       string `json:"level"`
+	Earned      bool   `json:"earned"`
+}
+
 type DashboardItem struct {
 	Item       Item         `json:"item"`
 	Stats      ItemStats    `json:"stats"`
 	Heatmap    []HeatmapDay `json:"heatmap"`
 	TodayCount int          `json:"today_count"`
 	Status     string       `json:"status"`
+}
+
+type SharePayload struct {
+	Item       Item         `json:"item"`
+	Stats      ItemStats    `json:"stats"`
+	Heatmap    []HeatmapDay `json:"heatmap"`
+	TodayCount int          `json:"today_count"`
+	Badges     []Badge      `json:"badges"`
 }
 
 type DashboardResponse struct {
@@ -133,16 +150,17 @@ type ItemRequest struct {
 	ValidStartTime     *string `json:"valid_start_time"`
 	ValidEndTime       *string `json:"valid_end_time"`
 	AllowMakeup        *bool   `json:"allow_makeup"`
-	MakeupLimitDays    *int    `json:"makeup_limit_days"`
+	MakeupMonthlyLimit *int    `json:"makeup_monthly_limit"`
 	AllowExtraCheckins *bool   `json:"allow_extra_checkins"`
 	ShowOnDashboard    *bool   `json:"show_on_dashboard"`
 	SortOrder          *int    `json:"sort_order"`
 }
 
 type CheckinRequest struct {
-	Count  *int    `json:"count"`
-	Note   *string `json:"note"`
-	Source *string `json:"source"`
+	Count       *int    `json:"count"`
+	Note        *string `json:"note"`
+	Source      *string `json:"source"`
+	CheckinDate *string `json:"checkin_date"`
 }
 
 type PreferenceRequest struct {

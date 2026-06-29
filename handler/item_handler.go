@@ -6,13 +6,14 @@ import (
 	"time"
 
 	"lumalog-backend/model"
+	"lumalog-backend/service"
 	"lumalog-backend/util"
 
 	"github.com/gin-gonic/gin"
 )
 
 func (h *Handler) ListItems(c *gin.Context) {
-	items, err := h.Repo.ListItems(c.Request.Context(), currentUserID(c), c.Query("dashboard") == "true")
+	items, err := h.Repo.ListItems(c.Request.Context(), currentUserID(c), c.Query("dashboard") == "true", c.Query("archived") == "true")
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "读取 item 失败")
 		return
@@ -60,6 +61,10 @@ func (h *Handler) CreateItem(c *gin.Context) {
 	if target < 1 {
 		target = 1
 	}
+	makeupMonthlyLimit := util.IntValue(req.MakeupMonthlyLimit, 0)
+	if makeupMonthlyLimit < 0 {
+		makeupMonthlyLimit = 0
+	}
 	timeMode := util.NormalizeTimeMode(util.StringValue(req.TimeMode, "all_day"))
 	validStart := util.NormalizeClock(util.StringValue(req.ValidStartTime, ""))
 	validEnd := util.NormalizeClock(util.StringValue(req.ValidEndTime, ""))
@@ -77,14 +82,15 @@ func (h *Handler) CreateItem(c *gin.Context) {
 		INSERT INTO items (
 			user_id, category_id, name, description, color_theme, start_date, end_date,
 			is_unlimited, daily_target_count, time_mode, valid_start_time, valid_end_time,
-			allow_makeup, makeup_limit_days, allow_extra_checkins, show_on_dashboard, sort_order
+			allow_makeup, makeup_limit_days, makeup_monthly_limit, allow_extra_checkins, show_on_dashboard, sort_order
 		)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
 		RETURNING id
 	`, userID, categoryID, name, util.StringValue(req.Description, ""), util.StringValue(req.ColorTheme, cat.ColorTheme),
 		startDate, endDate, isUnlimited, target, timeMode, validStart, validEnd,
-		util.BoolValue(req.AllowMakeup, false), util.IntValue(req.MakeupLimitDays, 0),
-		util.BoolValue(req.AllowExtraCheckins, false), util.BoolValue(req.ShowOnDashboard, true), util.IntValue(req.SortOrder, 0)).Scan(&id)
+		util.BoolValue(req.AllowMakeup, false), 0,
+		makeupMonthlyLimit, util.BoolValue(req.AllowExtraCheckins, false),
+		util.BoolValue(req.ShowOnDashboard, true), util.IntValue(req.SortOrder, 0)).Scan(&id)
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "创建 item 失败")
 		return
@@ -184,8 +190,12 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 	if req.AllowMakeup != nil {
 		it.AllowMakeup = *req.AllowMakeup
 	}
-	if req.MakeupLimitDays != nil {
-		it.MakeupLimitDays = *req.MakeupLimitDays
+	it.MakeupLimitDays = 0
+	if req.MakeupMonthlyLimit != nil {
+		it.MakeupMonthlyLimit = *req.MakeupMonthlyLimit
+		if it.MakeupMonthlyLimit < 0 {
+			it.MakeupMonthlyLimit = 0
+		}
 	}
 	if req.AllowExtraCheckins != nil {
 		it.AllowExtraCheckins = *req.AllowExtraCheckins
@@ -202,12 +212,12 @@ func (h *Handler) UpdateItem(c *gin.Context) {
 		SET category_id = $1, name = $2, description = $3, color_theme = $4,
 			start_date = $5, end_date = $6, is_unlimited = $7, daily_target_count = $8,
 			time_mode = $9, valid_start_time = $10, valid_end_time = $11,
-			allow_makeup = $12, makeup_limit_days = $13, allow_extra_checkins = $14,
-			show_on_dashboard = $15, sort_order = $16, updated_at = NOW()
-		WHERE id = $17 AND user_id = $18 AND deleted_at IS NULL
+			allow_makeup = $12, makeup_limit_days = $13, makeup_monthly_limit = $14, allow_extra_checkins = $15,
+			show_on_dashboard = $16, sort_order = $17, updated_at = NOW()
+		WHERE id = $18 AND user_id = $19 AND deleted_at IS NULL
 	`, it.CategoryID, it.Name, it.Description, it.ColorTheme, it.StartDate, it.EndDate,
 		it.IsUnlimited, it.DailyTargetCount, it.TimeMode, it.ValidStartTime, it.ValidEndTime,
-		it.AllowMakeup, it.MakeupLimitDays, it.AllowExtraCheckins, it.ShowOnDashboard,
+		it.AllowMakeup, it.MakeupLimitDays, it.MakeupMonthlyLimit, it.AllowExtraCheckins, it.ShowOnDashboard,
 		it.SortOrder, it.ID, userID)
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "更新 item 失败")
@@ -239,6 +249,52 @@ func (h *Handler) DeleteItem(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"ok": true})
 }
 
+func (h *Handler) ArchiveItem(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	userID := currentUserID(c)
+	tag, err := h.DB.Exec(c.Request.Context(), `
+		UPDATE items
+		SET archived_at = COALESCE(archived_at, NOW()), updated_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+	`, id, userID)
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "归档 habit 失败")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		jsonError(c, http.StatusNotFound, "item 不存在")
+		return
+	}
+	it, _ := h.Repo.GetItem(c.Request.Context(), userID, id)
+	c.JSON(http.StatusOK, it)
+}
+
+func (h *Handler) UnarchiveItem(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	userID := currentUserID(c)
+	tag, err := h.DB.Exec(c.Request.Context(), `
+		UPDATE items
+		SET archived_at = NULL, updated_at = NOW()
+		WHERE id = $1 AND user_id = $2 AND deleted_at IS NULL
+	`, id, userID)
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "恢复 habit 失败")
+		return
+	}
+	if tag.RowsAffected() == 0 {
+		jsonError(c, http.StatusNotFound, "item 不存在")
+		return
+	}
+	it, _ := h.Repo.GetItem(c.Request.Context(), userID, id)
+	c.JSON(http.StatusOK, it)
+}
+
 func (h *Handler) ItemStats(c *gin.Context) {
 	id, ok := parseIDParam(c, "id")
 	if !ok {
@@ -256,4 +312,48 @@ func (h *Handler) ItemStats(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, di.Stats)
+}
+
+func (h *Handler) ItemBadges(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	userID := currentUserID(c)
+	it, err := h.Repo.GetItem(c.Request.Context(), userID, id)
+	if err != nil {
+		jsonError(c, http.StatusNotFound, "item 不存在")
+		return
+	}
+	di, err := h.Service.BuildDashboardItem(c.Request.Context(), userID, it)
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "读取徽章失败")
+		return
+	}
+	c.JSON(http.StatusOK, service.ItemBadges(di.Stats))
+}
+
+func (h *Handler) ItemShare(c *gin.Context) {
+	id, ok := parseIDParam(c, "id")
+	if !ok {
+		return
+	}
+	userID := currentUserID(c)
+	it, err := h.Repo.GetItem(c.Request.Context(), userID, id)
+	if err != nil {
+		jsonError(c, http.StatusNotFound, "item 不存在")
+		return
+	}
+	di, err := h.Service.BuildDashboardItem(c.Request.Context(), userID, it)
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "读取分享数据失败")
+		return
+	}
+	c.JSON(http.StatusOK, model.SharePayload{
+		Item:       di.Item,
+		Stats:      di.Stats,
+		Heatmap:    di.Heatmap,
+		TodayCount: di.TodayCount,
+		Badges:     service.ItemBadges(di.Stats),
+	})
 }

@@ -171,6 +171,7 @@ func upsertPatchItem(ctx context.Context, tx pgx.Tx, userID, categoryID int64, n
 				time_mode = 'all_day',
 				valid_start_time = '',
 				valid_end_time = '',
+				makeup_monthly_limit = 0,
 				allow_extra_checkins = FALSE,
 				show_on_dashboard = TRUE,
 				updated_at = NOW()
@@ -183,9 +184,9 @@ func upsertPatchItem(ctx context.Context, tx pgx.Tx, userID, categoryID int64, n
 		INSERT INTO items (
 			user_id, category_id, name, description, color_theme, start_date, end_date,
 			is_unlimited, daily_target_count, time_mode, valid_start_time, valid_end_time,
-			allow_makeup, makeup_limit_days, allow_extra_checkins, show_on_dashboard, sort_order
+			allow_makeup, makeup_limit_days, makeup_monthly_limit, allow_extra_checkins, show_on_dashboard, sort_order
 		)
-		VALUES ($1, $2, $3, $4, 'teal', $5, '', TRUE, 1, 'all_day', '', '', FALSE, 0, FALSE, TRUE, 0)
+		VALUES ($1, $2, $3, $4, 'teal', $5, '', TRUE, 1, 'all_day', '', '', FALSE, 0, 0, FALSE, TRUE, 0)
 		RETURNING id
 	`, userID, categoryID, name, "patch 模拟数据：已连续阅读余华作品 246 天", startDate).Scan(&itemID)
 	return itemID, err

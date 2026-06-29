@@ -22,7 +22,7 @@ func (h *Handler) Dashboard(c *gin.Context) {
 		jsonError(c, http.StatusInternalServerError, "读取分类失败")
 		return
 	}
-	items, err := h.Repo.ListItems(ctx, userID, true)
+	items, err := h.Repo.ListItems(ctx, userID, true, false)
 	if err != nil {
 		jsonError(c, http.StatusInternalServerError, "读取 item 失败")
 		return
@@ -43,4 +43,13 @@ func (h *Handler) Dashboard(c *gin.Context) {
 		Categories: cats,
 		Items:      result,
 	})
+}
+
+func (h *Handler) Badges(c *gin.Context) {
+	badges, err := h.Service.UserBadges(c.Request.Context(), currentUserID(c))
+	if err != nil {
+		jsonError(c, http.StatusInternalServerError, "读取成就徽章失败")
+		return
+	}
+	c.JSON(http.StatusOK, badges)
 }

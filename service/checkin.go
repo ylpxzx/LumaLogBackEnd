@@ -8,6 +8,9 @@ import (
 )
 
 func CheckinStatus(it model.Item, todayCount int, now time.Time) string {
+	if it.ArchivedAt != "" {
+		return "archived"
+	}
 	today := now.Format(util.DateLayout)
 	if util.DateBefore(today, it.StartDate) {
 		return "not_started"
@@ -45,6 +48,8 @@ func StatusMessage(status string) string {
 		return "今日签到时间已结束"
 	case "completed":
 		return "今日已完成签到"
+	case "archived":
+		return "该 item 已归档"
 	default:
 		return "当前不能签到"
 	}
