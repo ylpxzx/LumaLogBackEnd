@@ -139,6 +139,18 @@ func (h *Handler) CreateCheckin(c *gin.Context) {
 		}
 	}
 
+	if req.Note != nil {
+		_, err = h.DB.Exec(c.Request.Context(), `
+			UPDATE checkins
+			SET note = $1
+			WHERE user_id = $2 AND item_id = $3 AND checkin_date = $4
+		`, note, userID, id, checkinDate)
+		if err != nil {
+			jsonError(c, http.StatusInternalServerError, "更新签到备注失败")
+			return
+		}
+	}
+
 	_, err = h.DB.Exec(c.Request.Context(), `
 		INSERT INTO checkins (user_id, item_id, checkin_date, checkin_time, count, note, source)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
